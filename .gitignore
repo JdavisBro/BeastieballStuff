@@ -2,3 +2,4 @@
 **/*.pyc
 out.*
 *.obj
+sprite_info.json

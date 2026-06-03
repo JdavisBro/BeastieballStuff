@@ -8,6 +8,9 @@ import zlib
 
 GAME_DIR = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Beastieball")
 
+with open("sprite_info.json") as f:
+    sprite_info = json.load(f)
+
 def get_vertex_index(vertexes, prefix: str, index: int, x: int, y: int, z: int=None):
     if x in vertexes:
         if y in vertexes[x]:
@@ -25,6 +28,15 @@ def get_vertex_index(vertexes, prefix: str, index: int, x: int, y: int, z: int=N
         vertexes[x][y][z] = index
     return index, f"{prefix} {x} {y}{"" if z is None else f" {z}"}\n"
 
+def transform_texcoord(x, y, sprite_transforms):
+    if not sprite_transforms:
+        return x, 1.0 - y
+    x = (x - sprite_transforms["pageOffsetX"]) * sprite_transforms["pageScaleX"]
+    x = x * sprite_transforms["spriteScaleX"] + sprite_transforms["spriteOffsetX"]
+    y = (y - sprite_transforms["pageOffsetY"]) * sprite_transforms["pageScaleY"]
+    y = y * sprite_transforms["spriteScaleY"] + sprite_transforms["spriteOffsetY"]
+    return x, 1.0 - y
+
 def convert_to_obj(groups: list[dict], output_fp: Path):
     output = "# OBJ file\n"
     v_i = 1
@@ -34,11 +46,19 @@ def convert_to_obj(groups: list[dict], output_fp: Path):
     vt_vertexes = {}
     vn_vertexes = {}
     for group in groups:
-        output += f"o {group['name']}\n"
+        # output += f"o {group['name']}\n"
+        # output += f"g {group['name']}\n"
         mesh_index = 0
         for mesh in group["meshes"]:
-            output += f"g {mesh['texture_name']}{mesh['texture_slot']}{mesh['palette_slot']}{mesh_index}\n"
+            stuff = f"{group['name']}#{mesh['texture_name']}#{mesh['texture_slot']}#{mesh['palette_slot']}#{mesh_index}#{mesh['color']}"
+            output += f"o {stuff}\n"
+            output += f"g {stuff}\n"
             mesh_index += 1
+            sprite_transforms = None
+            if mesh['texture_slot'] >= 99:
+                tex_name = f"sprTex_{mesh['texture_name']}"
+                if tex_name not in sprite_info: tex_name = mesh['texture_name']
+                if tex_name in sprite_info: sprite_transforms = sprite_info[tex_name]
             if "vertexes" not in mesh:
                 continue
             face_output = "f"
@@ -50,7 +70,7 @@ def convert_to_obj(groups: list[dict], output_fp: Path):
                     output += add_str
                     v_i += 1
                 # output += f"v {x} {y} {z}\n"
-                vx, vy = vertex["texcoord"]
+                vx, vy = transform_texcoord(*vertex["texcoord"], sprite_transforms)
                 vt_index, add_str = get_vertex_index(vt_vertexes, "vt", vt_i, vx, vy)
                 if add_str:
                     output += add_str
@@ -226,10 +246,10 @@ def parse_buffer(buffer: BytesIO, has_tangents: bool, size: int):
 
 def read_buffer_format(buffer: BytesIO, format: str):
     if format == "position_3d" or format == "normal":
-        return [read_f32(buffer), read_f32(buffer), read_f32(buffer)]
+        return [-read_f32(buffer), read_f32(buffer), read_f32(buffer)]
     elif format == "position":
         return [read_f32(buffer), read_f32(buffer)]
-    elif format == "colour" or  format == "tangent":
+    elif format == "colour" or format == "tangent":
         return read_u32(buffer)
     elif format == "texcoord" or format == "texcoord2":
         return [read_f32(buffer), read_f32(buffer)]
